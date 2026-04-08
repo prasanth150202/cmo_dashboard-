@@ -1,65 +1,169 @@
-import Image from "next/image";
+"use client";
+import React, { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
+import { Tag, RefreshCw, Zap, TrendingUp, TrendingDown } from "lucide-react";
+import axios from "axios";
+import DateRangePicker, { defaultRange, type DateRange } from "@/components/DateRangePicker";
 
-export default function Home() {
+const API_BASE = "http://localhost:8000/api/v1";
+const fmtMoney = (v: number) => "₹" + Math.round(v).toLocaleString("en-IN");
+
+export default function DashboardPage() {
+  const router = useRouter();
+  const [brands, setBrands]   = useState<any[]>([]);
+  const [dateRange, setDateRange] = useState<DateRange>(defaultRange());
+  const [loading, setLoading]  = useState(true);
+  const [syncing, setSyncing]  = useState(false);
+
+  const fetchBrands = async (from: string, to: string) => {
+    setLoading(true);
+    try {
+      const r = await axios.get(`${API_BASE}/brands/overview?date_from=${from}&date_to=${to}`);
+      setBrands(r.data || []);
+    } catch {
+      setBrands([]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchBrands(dateRange.from, dateRange.to);
+  }, [dateRange.from, dateRange.to]);
+
+  const triggerSync = async (type: "recent" | "history") => {
+    setSyncing(true);
+    try {
+      if (type === "history") {
+        await axios.post(`${API_BASE}/dashboard/sync-history?days=90`);
+        alert("✅ 90-day history stored in Supabase.");
+      } else {
+        await axios.post(`${API_BASE}/dashboard/sync-recent`);
+      }
+      fetchBrands(dateRange.from, dateRange.to);
+    } catch {
+      alert("❌ Sync failed. Check META_SYSTEM_USER_TOKEN in .env");
+    } finally {
+      setSyncing(false);
+    }
+  };
+
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
+    <div className="space-y-8 animate-in fade-in duration-500">
+      {/* Header */}
+      <div className="flex justify-between items-end">
+        <div>
+          <h1 className="text-3xl font-medium text-foreground tracking-tight">
+            Command Center
           </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
+          <p className="text-muted-foreground mt-1 font-medium">
+            {brands.length} brand{brands.length !== 1 ? "s" : ""} · <span className="text-primary">{dateRange.label}</span>
           </p>
         </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
+        <div className="flex items-center gap-3">
+          <DateRangePicker value={dateRange} onChange={setDateRange} />
+          <button
+            onClick={() => fetchBrands(dateRange.from, dateRange.to)}
+            className="p-2.5 border border-border bg-card rounded-xl hover:bg-muted transition-all text-muted-foreground shadow-sm"
           >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
+            <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
+          </button>
+          <button
+            onClick={() => triggerSync("recent")}
+            disabled={syncing}
+            className="flex items-center gap-2 px-4 py-2.5 bg-card border border-border rounded-xl hover:bg-muted transition-all disabled:opacity-50 font-medium text-sm text-foreground shadow-sm"
           >
-            Documentation
-          </a>
+            <RefreshCw className={`w-4 h-4 ${syncing ? "animate-spin" : ""}`} />
+            {syncing ? "Syncing..." : "Sync Recent"}
+          </button>
+          <button
+            onClick={() => triggerSync("history")}
+            disabled={syncing}
+            className="flex items-center gap-2 px-5 py-2.5 bg-primary text-primary-foreground rounded-xl hover:bg-primary-hover transition-all shadow-md shadow-primary/20 disabled:opacity-50 font-medium text-sm"
+          >
+            <Zap className={`w-4 h-4 ${syncing ? "animate-pulse fill-current" : "fill-current"}`} />
+            {syncing ? "Syncing..." : "Sync History"}
+          </button>
         </div>
-      </main>
+      </div>
+
+      {/* Brand Grid */}
+      {loading ? (
+        <div className="grid grid-cols-2 xl:grid-cols-4 gap-4">
+          {[...Array(4)].map((_, i) => (
+            <div key={i} className="h-52 bg-card border border-border rounded-2xl animate-pulse shadow-sm" />
+          ))}
+        </div>
+      ) : brands.length === 0 ? (
+        <div className="p-8 bg-primary/5 border border-primary/10 rounded-2xl flex items-center gap-4">
+          <Tag className="w-6 h-6 text-primary shrink-0" />
+          <div>
+            <p className="font-medium text-primary">No brands configured</p>
+            <p className="text-xs text-muted-foreground mt-0.5">Go to Brand Manager to create brands and map ad accounts.</p>
+          </div>
+        </div>
+      ) : (
+        <div className="grid grid-cols-2 xl:grid-cols-4 gap-4">
+          {brands.map((b) => {
+            const roas   = b.metrics?.roas ?? 0;
+            const roasOk = roas >= b.target_roas;
+            return (
+              <button
+                key={b.brand_id}
+                onClick={() => router.push(`/brands/${b.brand_id}`)}
+                className="text-left p-5 rounded-2xl border border-border bg-card shadow-sm hover:shadow-md hover:border-primary/50 hover:-translate-y-0.5 transition-all group"
+              >
+                <div className="flex items-center gap-3 mb-5">
+                  <div
+                    className="w-10 h-10 rounded-xl flex items-center justify-center text-white font-medium text-sm shrink-0 shadow-sm overflow-hidden"
+                    style={{ backgroundColor: b.brand_color }}
+                  >
+                    {b.logo_url ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={b.logo_url} alt={b.brand_name} className="w-full h-full object-cover" />
+                    ) : (
+                      b.brand_name.slice(0, 2).toUpperCase()
+                    )}
+                  </div>
+                  <div className="min-w-0">
+                    <p className="font-medium text-foreground text-sm truncate">{b.brand_name}</p>
+                    <p className="text-[10px] text-muted-foreground truncate">{b.industry || "—"}</p>
+                  </div>
+                  <div className="ml-auto shrink-0 flex items-center justify-center w-8 h-8 rounded-full bg-muted group-hover:bg-background transition-colors">
+                    {roasOk
+                      ? <TrendingUp className="w-4 h-4 text-emerald-500" />
+                      : <TrendingDown className="w-4 h-4 text-amber-500" />}
+                  </div>
+                </div>
+
+                <div className="space-y-3">
+                  <div className="flex justify-between items-center">
+                    <span className="text-[10px] text-muted-foreground uppercase font-medium tracking-wider">Spend</span>
+                    <span className="text-sm font-medium text-foreground">{fmtMoney(b.metrics?.spend ?? 0)}</span>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span className="text-[10px] text-muted-foreground uppercase font-medium tracking-wider">Revenue</span>
+                    <span className="text-sm font-medium text-emerald-600 dark:text-emerald-400">{fmtMoney(b.metrics?.revenue ?? 0)}</span>
+                  </div>
+                  <div className="flex justify-between items-center bg-muted/50 p-2 rounded-lg -mx-2 px-2">
+                    <span className="text-[10px] text-muted-foreground uppercase font-medium tracking-wider">ROAS</span>
+                    <span className={`text-sm font-medium ${roasOk ? "text-emerald-600 dark:text-emerald-400" : "text-amber-600 dark:text-amber-400"}`}>
+                      {roas.toFixed(2)}×
+                    </span>
+                  </div>
+                </div>
+
+                <div className="mt-4 pt-4 border-t border-border flex items-center justify-between">
+                  <span className={`text-[10px] font-medium uppercase tracking-wider px-2 py-0.5 rounded-lg ${roasOk ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400" : "bg-amber-500/10 text-amber-600 dark:text-amber-400"}`}>
+                    {roasOk ? "On Target" : "Below Target"}
+                  </span>
+                  <span className="text-[10px] text-muted-foreground font-medium">{b.accounts_count} acct{b.accounts_count !== 1 ? "s" : ""}</span>
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
