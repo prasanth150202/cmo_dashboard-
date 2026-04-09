@@ -15,6 +15,8 @@ export default function DashboardPage() {
   const [loading, setLoading]  = useState(true);
   const [syncing, setSyncing]  = useState(false);
 
+  const [viewMode, setViewMode] = useState<"grid" | "table">("table");
+
   const fetchBrands = async (from: string, to: string) => {
     setLoading(true);
     try {
@@ -62,6 +64,24 @@ export default function DashboardPage() {
         </div>
         <div className="flex items-center gap-3">
           <DateRangePicker value={dateRange} onChange={setDateRange} />
+          
+          <div className="flex p-1 bg-card border border-border rounded-xl shadow-sm">
+            <button
+              onClick={() => setViewMode("grid")}
+              className={`p-1.5 rounded-lg transition-all ${viewMode === "grid" ? "bg-primary text-primary-foreground shadow-sm" : "text-muted-foreground hover:bg-muted"}`}
+              title="Grid View"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="7" height="7" x="3" y="3" rx="1"/><rect width="7" height="7" x="14" y="3" rx="1"/><rect width="7" height="7" x="14" y="14" rx="1"/><rect width="7" height="7" x="3" y="14" rx="1"/></svg>
+            </button>
+            <button
+              onClick={() => setViewMode("table")}
+              className={`p-1.5 rounded-lg transition-all ${viewMode === "table" ? "bg-primary text-primary-foreground shadow-sm" : "text-muted-foreground hover:bg-muted"}`}
+              title="Table View"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="3" x2="21" y1="6" y2="6"/><line x1="3" x2="21" y1="12" y2="12"/><line x1="3" x2="21" y1="18" y2="18"/></svg>
+            </button>
+          </div>
+
           <button
             onClick={() => fetchBrands(dateRange.from, dateRange.to)}
             className="p-2.5 border border-border bg-card rounded-xl hover:bg-muted transition-all text-muted-foreground shadow-sm"
@@ -87,7 +107,7 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* Brand Grid */}
+      {/* Brand Grid / Table */}
       {loading ? (
         <div className="grid grid-cols-2 xl:grid-cols-4 gap-4">
           {[...Array(4)].map((_, i) => (
@@ -102,7 +122,7 @@ export default function DashboardPage() {
             <p className="text-xs text-muted-foreground mt-0.5">Go to Brand Manager to create brands and map ad accounts.</p>
           </div>
         </div>
-      ) : (
+      ) : viewMode === "grid" ? (
         <div className="grid grid-cols-2 xl:grid-cols-4 gap-4">
           {brands.map((b) => {
             const roas   = b.metrics?.roas ?? 0;
@@ -162,6 +182,79 @@ export default function DashboardPage() {
               </button>
             );
           })}
+        </div>
+      ) : (
+        <div className="bg-card border border-border rounded-2xl overflow-hidden shadow-sm">
+          <table className="w-full text-left border-collapse">
+            <thead>
+              <tr className="border-b border-border bg-muted/30">
+                <th className="px-6 py-4 text-[10px] text-muted-foreground uppercase font-bold tracking-wider">Brand</th>
+                <th className="px-6 py-4 text-[10px] text-muted-foreground uppercase font-bold tracking-wider">Status</th>
+                <th className="px-6 py-4 text-[10px] text-muted-foreground uppercase font-bold tracking-wider text-right">Spend</th>
+                <th className="px-6 py-4 text-[10px] text-muted-foreground uppercase font-bold tracking-wider text-right">Revenue</th>
+                <th className="px-6 py-4 text-[10px] text-muted-foreground uppercase font-bold tracking-wider text-right">Target ROAS</th>
+                <th className="px-6 py-4 text-[10px] text-muted-foreground uppercase font-bold tracking-wider text-right">Current ROAS</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-border">
+              {brands.map((b) => {
+                const roas = b.metrics?.roas ?? 0;
+                const roasOk = roas >= b.target_roas;
+                return (
+                  <tr 
+                    key={b.brand_id} 
+                    onClick={() => router.push(`/brands/${b.brand_id}`)}
+                    className="hover:bg-muted/50 cursor-pointer transition-colors group"
+                  >
+                    <td className="px-6 py-4">
+                      <div className="flex items-center gap-3">
+                        <div
+                          className="w-8 h-8 rounded-lg flex items-center justify-center text-white font-medium text-[10px] shrink-0 shadow-sm overflow-hidden"
+                          style={{ backgroundColor: b.brand_color }}
+                        >
+                          {b.logo_url ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img src={b.logo_url} alt={b.brand_name} className="w-full h-full object-cover" />
+                          ) : (
+                            b.brand_name.slice(0, 2).toUpperCase()
+                          )}
+                        </div>
+                        <div>
+                          <p className="font-semibold text-foreground text-sm">{b.brand_name}</p>
+                          <p className="text-[10px] text-muted-foreground">{b.industry || "—"}</p>
+                        </div>
+                      </div>
+                    </td>
+                    <td className="px-6 py-4">
+                      <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider ${roasOk ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400" : "bg-amber-500/10 text-amber-600 dark:text-amber-400"}`}>
+                        <span className={`w-1.5 h-1.5 rounded-full ${roasOk ? "bg-emerald-500" : "bg-amber-500"}`}></span>
+                        {roasOk ? "On Target" : "Below Target"}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4 text-right">
+                      <p className="text-sm font-medium text-foreground">{fmtMoney(b.metrics?.spend ?? 0)}</p>
+                    </td>
+                    <td className="px-6 py-4 text-right">
+                      <p className="text-sm font-semibold text-emerald-600 dark:text-emerald-400">{fmtMoney(b.metrics?.revenue ?? 0)}</p>
+                    </td>
+                    <td className="px-6 py-4 text-right">
+                      <p className="text-sm font-medium text-muted-foreground">{b.target_roas.toFixed(1)}×</p>
+                    </td>
+                    <td className="px-6 py-4 text-right">
+                      <div className="flex items-center justify-end gap-2">
+                        <span className={`text-sm font-bold ${roasOk ? "text-emerald-600 dark:text-emerald-400" : "text-amber-600 dark:text-amber-400"}`}>
+                          {roas.toFixed(2)}×
+                        </span>
+                        {roasOk
+                          ? <TrendingUp className="w-3.5 h-3.5 text-emerald-500" />
+                          : <TrendingDown className="w-3.5 h-3.5 text-amber-500" />}
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
         </div>
       )}
     </div>
