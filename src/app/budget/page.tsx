@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import axios from "axios";
 import { DollarSign, AlertTriangle, TrendingDown, TrendingUp } from "lucide-react";
 
-const API = "http://localhost:8000/api/v1";
+const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
 
 const PACE_CONFIG: Record<string, { color: string; label: string }> = {
   ON_PACE: { color: "emerald", label: "✅ On Pace" },

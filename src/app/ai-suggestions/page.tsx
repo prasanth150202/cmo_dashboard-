@@ -4,7 +4,7 @@ import axios from "axios";
 import { Brain, TrendingUp, TrendingDown, AlertCircle, CheckCircle, Clock, Zap } from "lucide-react";
 import { motion } from "framer-motion";
 
-const API = "http://localhost:8000/api/v1";
+const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
 
 export default function AISuggestionsPage() {
   const [data, setData] = useState<any>(null);

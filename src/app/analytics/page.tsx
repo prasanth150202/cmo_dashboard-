@@ -4,7 +4,7 @@ import axios from "axios";
 import { TrendingUp, TrendingDown, RefreshCw } from "lucide-react";
 import DateRangePicker, { defaultRange, type DateRange } from "@/components/DateRangePicker";
 
-const API = "http://localhost:8000/api/v1";
+const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
 
 const fmtMoney = (v: number) => "₹" + Math.round(v).toLocaleString("en-IN");
 const fmtNum   = (v: number) => Math.round(v).toLocaleString("en-IN");

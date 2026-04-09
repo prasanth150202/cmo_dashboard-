@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import axios from "axios";
 import { Palette, AlertTriangle, CheckCircle, Eye } from "lucide-react";
 
-const API = "http://localhost:8000/api/v1";
+const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
 
 const STATUS_CONFIG: Record<string, { color: string; icon: any; bg: string }> = {
   FATIGUED: { color: "text-red-400", bg: "bg-red-500/10 border-red-500/20", icon: AlertTriangle },

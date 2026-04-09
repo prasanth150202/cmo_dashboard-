@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import axios from "axios";
 import { CheckCircle, XCircle, AlertTriangle, Clock, RefreshCw } from "lucide-react";
 
-const API = "http://localhost:8000/api/v1";
+const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
 
 export default function ReportsPage() {
   const [summary, setSummary] = useState<any>(null);
