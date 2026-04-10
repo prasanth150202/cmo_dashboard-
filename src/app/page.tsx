@@ -171,6 +171,25 @@ export default function DashboardPage() {
                       {roas.toFixed(2)}×
                     </span>
                   </div>
+                  {(() => {
+                    const score = b.metrics?.score ?? 0;
+                    return (
+                      <div className="flex items-center justify-between gap-2 pt-1">
+                        <span className="text-[10px] text-muted-foreground uppercase font-medium tracking-wider shrink-0">Score</span>
+                        <div className="flex items-center gap-2 flex-1 justify-end">
+                          <div className="flex-1 h-1.5 bg-muted rounded-full overflow-hidden max-w-[60px]">
+                            <div
+                              className={`h-full rounded-full ${score >= 60 ? "bg-emerald-500" : score >= 30 ? "bg-amber-500" : "bg-red-500"}`}
+                              style={{ width: `${score}%` }}
+                            />
+                          </div>
+                          <span className={`text-sm font-medium ${score >= 60 ? "text-emerald-600 dark:text-emerald-400" : score >= 30 ? "text-amber-600 dark:text-amber-400" : "text-red-600 dark:text-red-400"}`}>
+                            {score}
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })()}
                 </div>
 
                 <div className="mt-4 pt-4 border-t border-border flex items-center justify-between">
@@ -194,6 +213,7 @@ export default function DashboardPage() {
                 <th className="px-6 py-4 text-[10px] text-muted-foreground uppercase font-bold tracking-wider text-right">Revenue</th>
                 <th className="px-6 py-4 text-[10px] text-muted-foreground uppercase font-bold tracking-wider text-right">Target ROAS</th>
                 <th className="px-6 py-4 text-[10px] text-muted-foreground uppercase font-bold tracking-wider text-right">Current ROAS</th>
+                <th className="px-6 py-4 text-[10px] text-muted-foreground uppercase font-bold tracking-wider text-right">Score</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
@@ -249,6 +269,24 @@ export default function DashboardPage() {
                           ? <TrendingUp className="w-3.5 h-3.5 text-emerald-500" />
                           : <TrendingDown className="w-3.5 h-3.5 text-amber-500" />}
                       </div>
+                    </td>
+                    <td className="px-6 py-4 text-right">
+                      {(() => {
+                        const score = b.metrics?.score ?? 0;
+                        return (
+                          <div className="flex items-center justify-end gap-2">
+                            <div className="w-16 h-1.5 bg-muted rounded-full overflow-hidden">
+                              <div
+                                className={`h-full rounded-full ${score >= 60 ? "bg-emerald-500" : score >= 30 ? "bg-amber-500" : "bg-red-500"}`}
+                                style={{ width: `${score}%` }}
+                              />
+                            </div>
+                            <span className={`text-sm font-bold w-7 text-right ${score >= 60 ? "text-emerald-600 dark:text-emerald-400" : score >= 30 ? "text-amber-600 dark:text-amber-400" : "text-red-600 dark:text-red-400"}`}>
+                              {score}
+                            </span>
+                          </div>
+                        );
+                      })()}
                     </td>
                   </tr>
                 );
