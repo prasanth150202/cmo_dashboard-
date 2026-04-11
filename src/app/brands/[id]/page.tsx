@@ -4,7 +4,6 @@ import { useParams, useRouter } from "next/navigation";
 import axios from "axios";
 import {
   ArrowLeft, RefreshCw,
-  ShoppingCart, MousePointer, Eye, CreditCard, Package,
   ChevronRight, X, Layers, Image as ImageIcon,
   Film, LayoutGrid, ExternalLink, Link2,
 } from "lucide-react";
@@ -13,38 +12,338 @@ import DateRangePicker, { defaultRange, type DateRange } from "@/components/Date
 const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
 const fmtMoney = (v: number) => "₹" + Math.round(v).toLocaleString("en-IN");
 const fmtNum   = (v: number) => Math.round(v).toLocaleString("en-IN");
+const fmtShort = (v: number) =>
+  v >= 1_00_00_000 ? `₹${(v / 1_00_00_000).toFixed(1)}Cr`
+  : v >= 1_00_000  ? `₹${(v / 1_00_000).toFixed(1)}L`
+  : v >= 1_000     ? `₹${(v / 1_000).toFixed(0)}k`
+  : `₹${Math.round(v)}`;
 
-// ── Mini bar chart ────────────────────────────────────────────────────────────
-function SparkBars({ data, field, color = "bg-indigo-500" }: { data: any[]; field: string; color?: string }) {
-  if (!data.length) return null;
-  const max = Math.max(...data.map((r) => r[field] || 0), 1);
+// ── Bezier path helper ────────────────────────────────────────────────────────
+function smoothPath(pts: [number, number][]): string {
+  if (pts.length < 2) return "";
+  const tension = 0.35;
+  let d = `M ${pts[0][0]} ${pts[0][1]}`;
+  for (let i = 0; i < pts.length - 1; i++) {
+    const p0 = pts[Math.max(i - 1, 0)];
+    const p1 = pts[i];
+    const p2 = pts[i + 1];
+    const p3 = pts[Math.min(i + 2, pts.length - 1)];
+    const cp1x = p1[0] + (p2[0] - p0[0]) * tension;
+    const cp1y = p1[1] + (p2[1] - p0[1]) * tension;
+    const cp2x = p2[0] - (p3[0] - p1[0]) * tension;
+    const cp2y = p2[1] - (p3[1] - p1[1]) * tension;
+    d += ` C ${cp1x.toFixed(2)} ${cp1y.toFixed(2)}, ${cp2x.toFixed(2)} ${cp2y.toFixed(2)}, ${p2[0]} ${p2[1]}`;
+  }
+  return d;
+}
+
+// ── Sparkline ─────────────────────────────────────────────────────────────────
+function SparkLine({ values, color }: { values: number[]; color: string }) {
+  const W = 80, H = 28;
+  const valid = values.filter(v => !isNaN(v));
+  if (valid.length < 2) return <div style={{ width: W, height: H }} />;
+  const min = Math.min(...valid), max = Math.max(...valid), range = max - min || 1;
+  const pts: [number, number][] = valid.map((v, i) => [
+    (i / (valid.length - 1)) * W,
+    H - 2 - ((v - min) / range) * (H - 6),
+  ]);
+  const path = smoothPath(pts);
+  const last = pts[pts.length - 1];
+  const id = `sp-${color.replace(/[^a-z0-9]/g, "")}${Math.random().toString(36).slice(2, 6)}`;
   return (
-    <div className="flex items-end gap-0.5 h-10">
-      {data.map((r, i) => (
-        <div
-          key={i}
-          className={`flex-1 rounded-sm ${color} opacity-80`}
-          style={{ height: `${Math.max(4, ((r[field] || 0) / max) * 100)}%` }}
-          title={`${r.date}: ${r[field]}`}
-        />
-      ))}
+    <svg width={W} height={H} className="overflow-visible flex-shrink-0">
+      <defs>
+        <linearGradient id={id} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%"   stopColor={color} stopOpacity={0.28} />
+          <stop offset="100%" stopColor={color} stopOpacity={0}    />
+        </linearGradient>
+      </defs>
+      <path d={`${path} L ${pts[pts.length-1][0]} ${H} L ${pts[0][0]} ${H} Z`} fill={`url(#${id})`} />
+      <path d={path} fill="none" stroke={color} strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" />
+      <circle cx={last[0]} cy={last[1]} r={2} fill={color} />
+    </svg>
+  );
+}
+
+// ── KPI card with sparkline ───────────────────────────────────────────────────
+function KpiCard({ label, value, sub, accentColor, textColor, sparkValues, loading }: {
+  label: string; value: string; sub?: string;
+  accentColor: string; textColor: string;
+  sparkValues: number[]; loading: boolean;
+}) {
+  return (
+    <div className="p-5 bg-white/5 border border-white/5 rounded-2xl relative overflow-hidden">
+      <div className="absolute top-0 left-0 right-0 h-[2px]" style={{ background: accentColor }} />
+      <p className="text-[10px] font-medium uppercase tracking-widest text-slate-500 mb-2">{label}</p>
+      <p className={`text-2xl font-semibold ${textColor}`}>{loading ? "…" : value}</p>
+      {sub && <p className="text-[10px] text-slate-600 mt-1">{sub}</p>}
+      {!loading && sparkValues.length >= 2 && (
+        <div className="flex justify-end mt-2">
+          <SparkLine values={sparkValues} color={accentColor} />
+        </div>
+      )}
     </div>
   );
 }
 
-// ── Funnel step ───────────────────────────────────────────────────────────────
-function FunnelStep({ label, value, pct, icon: Icon, color }: any) {
+// ── Grouped bar chart ─────────────────────────────────────────────────────────
+function BarChart({ data, keys, colors, fmtTip, fmtAxis, keyLabels }: {
+  data: Record<string, any>[]; keys: string[]; colors: string[];
+  fmtTip: (v: number) => string; fmtAxis: (v: number) => string;
+  keyLabels?: string[];
+}) {
+  const [tip, setTip] = useState<{ x: number; y: number; date: string; vals: number[] } | null>(null);
+  const W = 400, H = 160, PAD_L = 40, PAD_B = 24, PAD_T = 10, PAD_R = 8;
+  const iW = W - PAD_L - PAD_R, iH = H - PAD_T - PAD_B;
+  const allVals = data.flatMap(d => keys.map(k => Number(d[k]) || 0));
+  const maxV = Math.max(...allVals, 1);
+  const slotW = iW / (data.length || 1);
+  const barW  = (slotW / keys.length) * 0.62;
+  const barGap = (slotW / keys.length) * 0.08;
+  const totalGroupW = keys.length * barW + (keys.length - 1) * barGap;
+
+  // Tooltip dimensions
+  const TIP_W = 88, TIP_H = 12 + keys.length * 13;
+
   return (
-    <div className="flex-1 text-center">
-      <div className={`w-10 h-10 rounded-xl ${color} flex items-center justify-center mx-auto mb-2`}>
-        <Icon className="w-4 h-4 text-white" />
-      </div>
-      <p className="text-lg font-medium text-white">{fmtNum(value)}</p>
-      <p className="text-[10px] text-slate-500 font-medium uppercase tracking-wider mt-0.5">{label}</p>
-      {pct !== null && (
-        <p className="text-[10px] text-indigo-400 font-medium mt-0.5">{pct}%</p>
+    <svg viewBox={`0 0 ${W} ${H}`} className="w-full" style={{ display: 'block', height: 'auto' }}
+      onMouseLeave={() => setTip(null)}>
+      {Array.from({ length: 5 }, (_, i) => {
+        const v = (maxV / 4) * i;
+        const y = PAD_T + iH - (v / maxV) * iH;
+        return (
+          <g key={i}>
+            <line x1={PAD_L} x2={W - PAD_R} y1={y} y2={y} stroke="rgba(99,140,255,0.07)" strokeWidth={0.6} />
+            <text x={PAD_L - 3} y={y + 3} fill="#475569" fontSize={9} textAnchor="end" fontFamily="monospace">{fmtAxis(v)}</text>
+          </g>
+        );
+      })}
+      {data.map((d, i) => {
+        const slotX  = PAD_L + i * slotW;
+        const groupX = slotX + (slotW - totalGroupW) / 2;
+        const vals   = keys.map(k => Number(d[k]) || 0);
+        const minBarY = Math.min(...vals.map(v => PAD_T + iH - Math.max((v / maxV) * iH, 1)));
+        return (
+          <g key={i}>
+            {keys.map((k, ki) => {
+              const v  = Number(d[k]) || 0;
+              const bH = Math.max((v / maxV) * iH, v > 0 ? 1 : 0);
+              const x  = groupX + ki * (barW + barGap);
+              const y  = PAD_T + iH - bH;
+              return <rect key={k} x={x} y={y} width={barW} height={bH} fill={colors[ki]} rx={2} opacity={0.85} />;
+            })}
+            {/* Invisible hover zone over full slot */}
+            <rect
+              x={slotX} y={PAD_T} width={slotW} height={iH}
+              fill="transparent"
+              onMouseEnter={() => setTip({ x: slotX + slotW / 2, y: minBarY, date: String(d.date ?? ""), vals })}
+            />
+            {(i % Math.max(1, Math.floor(data.length / 10)) === 0 || i === data.length - 1) && (
+              <text x={slotX + slotW / 2} y={H - PAD_B + 12} fill="#475569" fontSize={8} textAnchor="middle" fontFamily="monospace">
+                {String(d.date ?? "").slice(5)}
+              </text>
+            )}
+          </g>
+        );
+      })}
+
+      {/* Tooltip */}
+      {tip && (() => {
+        const tx = Math.min(Math.max(tip.x - TIP_W / 2, PAD_L), W - PAD_R - TIP_W);
+        const ty = Math.max(tip.y - TIP_H - 6, PAD_T);
+        return (
+          <g style={{ pointerEvents: 'none' }}>
+            <rect x={tx} y={ty} width={TIP_W} height={TIP_H} rx={4} fill="#1e293b" stroke="rgba(255,255,255,0.1)" strokeWidth={0.5} />
+            <text x={tx + 6} y={ty + 9} fill="#94a3b8" fontSize={7} fontFamily="monospace">{tip.date}</text>
+            {tip.vals.map((v, ki) => (
+              <g key={ki}>
+                <rect x={tx + 6} y={ty + 13 + ki * 13} width={5} height={5} rx={1} fill={colors[ki]} />
+                <text x={tx + 14} y={ty + 18 + ki * 13} fill="#f1f5f9" fontSize={7.5} fontFamily="monospace">
+                  {(keyLabels?.[ki] ?? keys[ki]).charAt(0).toUpperCase() + (keyLabels?.[ki] ?? keys[ki]).slice(1)}: {fmtTip(v)}
+                </text>
+              </g>
+            ))}
+          </g>
+        );
+      })()}
+    </svg>
+  );
+}
+
+// ── Smooth line chart ─────────────────────────────────────────────────────────
+function LineChart({ data, dataKey, color, fmtAxis, fmtTip, targetLine, h = 160 }: {
+  data: Record<string, any>[]; dataKey: string; color: string;
+  fmtAxis: (v: number) => string; fmtTip: (v: number) => string; targetLine?: number; h?: number;
+}) {
+  const [tip, setTip] = useState<{ x: number; y: number; date: string; val: string } | null>(null);
+  const W = 400, H = h, PAD_L = 30, PAD_B = 20, PAD_T = 8, PAD_R = 6;
+  const iW = W - PAD_L - PAD_R, iH = H - PAD_T - PAD_B;
+  const vals   = data.map(d => Number(d[dataKey]) || 0);
+  const allV   = targetLine != null ? [...vals, targetLine] : vals;
+  const minV   = Math.min(...allV, 0), maxV = Math.max(...allV, 1), range = maxV - minV || 1;
+  const toX    = (i: number) => PAD_L + (i / Math.max(data.length - 1, 1)) * iW;
+  const toY    = (v: number) => PAD_T + iH - ((v - minV) / range) * iH;
+  const pts: [number, number][] = data.map((d, i) => [toX(i), toY(Number(d[dataKey]) || 0)]);
+  const path   = smoothPath(pts);
+  const id     = `lc-${dataKey}-${Math.random().toString(36).slice(2, 6)}`;
+  return (
+    <svg viewBox={`0 0 ${W} ${H}`} className="w-full" style={{ display: 'block', height: 'auto' }}
+      onMouseLeave={() => setTip(null)}>
+      <defs>
+        <linearGradient id={id} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%"   stopColor={color} stopOpacity={0.22} />
+          <stop offset="100%" stopColor={color} stopOpacity={0}    />
+        </linearGradient>
+      </defs>
+      {Array.from({ length: 5 }, (_, i) => {
+        const v = minV + (range / 4) * i;
+        const y = toY(v);
+        return (
+          <g key={i}>
+            <line x1={PAD_L} x2={W - PAD_R} y1={y} y2={y} stroke="rgba(99,140,255,0.07)" strokeWidth={0.4} />
+            <text x={PAD_L - 2} y={y + 2.5} fill="#475569" fontSize={6} textAnchor="end" fontFamily="monospace">{fmtAxis(v)}</text>
+          </g>
+        );
+      })}
+      {targetLine != null && (
+        <line x1={PAD_L} x2={W - PAD_R} y1={toY(targetLine)} y2={toY(targetLine)}
+          stroke="rgba(245,158,11,0.55)" strokeWidth={0.8} strokeDasharray="4 3" />
       )}
-    </div>
+      {pts.length > 1 && (
+        <path d={`${path} L ${pts[pts.length-1][0]} ${PAD_T + iH} L ${pts[0][0]} ${PAD_T + iH} Z`} fill={`url(#${id})`} />
+      )}
+      {pts.length > 1 && (
+        <path d={path} fill="none" stroke={color} strokeWidth={1.2} strokeLinecap="round" strokeLinejoin="round" />
+      )}
+      {/* Vertical crosshair on hover */}
+      {tip && (
+        <line x1={tip.x} x2={tip.x} y1={PAD_T} y2={PAD_T + iH}
+          stroke="rgba(255,255,255,0.12)" strokeWidth={0.8} />
+      )}
+      {pts.map(([x, y], i) => (
+        <circle key={i} cx={x} cy={y} r={tip?.date === String(data[i]?.date ?? "") ? 3 : 1.5}
+          fill={color} style={{ cursor: 'crosshair' }}
+          onMouseEnter={() => setTip({ x, y, date: String(data[i]?.date ?? ""), val: fmtTip(Number(data[i]?.[dataKey]) || 0) })}
+        />
+      ))}
+      {/* Invisible wider hit area per point */}
+      {pts.map(([x, y], i) => (
+        <circle key={`h${i}`} cx={x} cy={y} r={8} fill="transparent"
+          onMouseEnter={() => setTip({ x, y, date: String(data[i]?.date ?? ""), val: fmtTip(Number(data[i]?.[dataKey]) || 0) })}
+        />
+      ))}
+      {data.map((d, i) => {
+        if (i % Math.max(1, Math.floor(data.length / 10)) !== 0 && i !== data.length - 1) return null;
+        return <text key={i} x={toX(i)} y={H - PAD_B + 8} fill="#475569" fontSize={6} textAnchor="middle" fontFamily="monospace">{String(d.date ?? "").slice(5)}</text>;
+      })}
+      {/* Tooltip */}
+      {tip && (() => {
+        const TIP_W = 72, TIP_H = 26;
+        const tx = Math.min(Math.max(tip.x - TIP_W / 2, PAD_L), W - PAD_R - TIP_W);
+        const ty = Math.max(tip.y - TIP_H - 8, PAD_T);
+        return (
+          <g style={{ pointerEvents: 'none' }}>
+            <rect x={tx} y={ty} width={TIP_W} height={TIP_H} rx={4} fill="#1e293b" stroke="rgba(255,255,255,0.1)" strokeWidth={0.5} />
+            <text x={tx + 6} y={ty + 9} fill="#94a3b8" fontSize={7} fontFamily="monospace">{tip.date}</text>
+            <circle cx={tx + 8} cy={ty + 18} r={3} fill={color} />
+            <text x={tx + 14} y={ty + 21} fill="#f1f5f9" fontSize={8} fontFamily="monospace" fontWeight="600">{tip.val}</text>
+          </g>
+        );
+      })()}
+    </svg>
+  );
+}
+
+// ── Conversion Funnel ─────────────────────────────────────────────────────────
+function ConversionFunnel({ steps }: {
+  steps: { label: string; value: number; convRate?: string }[];
+}) {
+  const W = 500, H = 160;
+  const PAD_L = 8, PAD_R = 8, PAD_TOP = 56, PAD_BOT = 14;
+  const CHART_H = H - PAD_TOP - PAD_BOT;
+  const CHART_BOT = PAD_TOP + CHART_H;
+  const n = steps.length;
+  const GAP = 8;
+  const BAR_W = (W - PAD_L - PAD_R - (n - 1) * GAP) / n;
+
+  const max = steps[0]?.value || 1;
+
+  const BAR_COLORS = ["#6366f1","#818cf8","#a5b4fc","#c7d2fe","#10b981"];
+  const TRAP_COLORS = ["rgba(99,102,241,0.12)","rgba(129,140,248,0.12)","rgba(165,180,252,0.12)","rgba(199,210,254,0.12)"];
+
+  const bars = steps.map((step, i) => {
+    const x = PAD_L + i * (BAR_W + GAP);
+    const h = Math.max((step.value / max) * CHART_H, step.value > 0 ? 3 : 0);
+    const y = CHART_BOT - h;
+    return { ...step, x, h, y };
+  });
+
+  return (
+    <svg viewBox={`0 0 ${W} ${H}`} className="w-full" style={{ display: 'block', height: 'auto' }}>
+      {/* Trapezoid fills between bars */}
+      {bars.slice(0, -1).map((bar, i) => {
+        const next = bars[i + 1];
+        const x1 = bar.x + BAR_W, y1 = bar.y;
+        const x2 = next.x,        y2 = next.y;
+        return (
+          <polygon key={i}
+            points={`${x1},${y1} ${x2},${y2} ${x2},${CHART_BOT} ${x1},${CHART_BOT}`}
+            fill={TRAP_COLORS[i]}
+          />
+        );
+      })}
+
+      {/* Bars */}
+      {bars.map((bar, i) => (
+        <rect key={i}
+          x={bar.x} y={bar.y} width={BAR_W} height={bar.h}
+          fill={BAR_COLORS[i]} rx={3} opacity={0.88}
+        />
+      ))}
+
+      {/* Connector lines: top-right of bar → top-left of next bar */}
+      {bars.slice(0, -1).map((bar, i) => {
+        const next = bars[i + 1];
+        return (
+          <line key={i}
+            x1={bar.x + BAR_W} y1={bar.y}
+            x2={next.x}        y2={next.y}
+            stroke="#ffffff" strokeWidth={1.2} opacity={0.25}
+          />
+        );
+      })}
+
+      {/* Labels above each bar */}
+      {bars.map((bar, i) => {
+        const cx = bar.x + BAR_W / 2;
+        const pct = ((bar.value / max) * 100).toFixed(1);
+        return (
+          <g key={i}>
+            {/* Step name */}
+            <text x={cx} y={PAD_TOP - 42} fill="#64748b" fontSize={7} textAnchor="middle" fontFamily="sans-serif" fontWeight="500">
+              {bar.label.toUpperCase()}
+            </text>
+            {/* % of total */}
+            <text x={cx} y={PAD_TOP - 29} fill="#94a3b8" fontSize={8} textAnchor="middle" fontFamily="monospace" fontWeight="600">
+              {pct}%
+            </text>
+            {/* Count */}
+            <text x={cx} y={PAD_TOP - 16} fill="#f1f5f9" fontSize={9.5} textAnchor="middle" fontFamily="monospace" fontWeight="700">
+              {fmtNum(bar.value)}
+            </text>
+            {/* Conv rate */}
+            {bar.convRate && (
+              <text x={cx} y={PAD_TOP - 4} fill="#10b981" fontSize={7} textAnchor="middle" fontFamily="monospace">
+                ↗ {bar.convRate}%
+              </text>
+            )}
+          </g>
+        );
+      })}
+
+      {/* X-axis baseline */}
+      <line x1={PAD_L} x2={W - PAD_R} y1={CHART_BOT} y2={CHART_BOT} stroke="rgba(255,255,255,0.06)" strokeWidth={1} />
+    </svg>
   );
 }
 
@@ -512,7 +811,8 @@ export default function BrandDetailPage() {
   const [range, setRange] = useState<DateRange>(defaultRange());
   const [sortCol, setSortCol] = useState<string>("spend");
   const [sortAsc, setSortAsc] = useState(false);
-  const [campFilter, setCampFilter] = useState("ALL");
+  const [campFilter, setCampFilter] = useState("LIVE");
+  const [createdInRange, setCreatedInRange] = useState(false);
   const [drill, setDrill] = useState<DrillState | null>(null);
 
   const fetch = (r: DateRange) => {
@@ -545,11 +845,15 @@ export default function BrandDetailPage() {
     else { setSortCol(col); setSortAsc(false); }
   };
 
-  const filteredCampaigns = campaigns.filter((c: any) => {
-    if (campFilter === "ACTIVE") return c.status === "ACTIVE";
-    if (campFilter === "PAUSED") return c.status === "PAUSED";
-    return true;
-  });
+  const liveCampaigns = campaigns.filter((c: any) => c.status === "ACTIVE");
+  const baseCampaigns = campFilter === "LIVE" ? liveCampaigns : campaigns;
+  const filteredCampaigns = createdInRange
+    ? baseCampaigns.filter((c: any) => {
+        if (!c.created_at) return false;
+        const d = c.created_at.slice(0, 10);
+        return d >= range.from && d <= range.to;
+      })
+    : baseCampaigns;
 
   const sortedCampaigns = [...filteredCampaigns].sort((a: any, b: any) => {
     const av = a[sortCol] ?? 0, bv = b[sortCol] ?? 0;
@@ -618,18 +922,27 @@ export default function BrandDetailPage() {
           <>
             {/* KPIs */}
             <div className="grid grid-cols-2 xl:grid-cols-4 gap-4">
-              {[
-                { label: "Revenue",   value: fmtMoney(summary.revenue ?? 0),   sub: range.label,    color: "text-emerald-400" },
-                { label: "ROAS",      value: `${(summary.roas ?? 0).toFixed(2)}×`, sub: `Target ${targetRoas}×`, color: roasOk ? "text-emerald-400" : "text-amber-400" },
-                { label: "Spend",     value: fmtMoney(summary.spend ?? 0),     sub: range.label,    color: "text-white" },
-                { label: "Purchases", value: fmtNum(summary.purchases ?? 0),   sub: summary.purchases > 0 ? `CPA ${fmtMoney((summary.spend ?? 0) / summary.purchases)}` : "CPA —", color: "text-indigo-400" },
-              ].map(({ label, value, sub, color }) => (
-                <div key={label} className="p-5 bg-white/5 border border-white/5 rounded-2xl">
-                  <p className="text-[10px] font-medium uppercase tracking-widest text-slate-500 mb-2">{label}</p>
-                  <p className={`text-2xl font-medium ${color}`}>{value}</p>
-                  <p className="text-[10px] text-slate-600 mt-1 font-medium">{sub}</p>
-                </div>
-              ))}
+              <KpiCard label="Revenue"   loading={loading}
+                value={fmtMoney(summary.revenue ?? 0)}
+                sub={range.label}
+                accentColor="#22c55e" textColor="text-emerald-400"
+                sparkValues={daily.map((r: any) => r.revenue)} />
+              <KpiCard label="ROAS"      loading={loading}
+                value={`${(summary.roas ?? 0).toFixed(2)}×`}
+                sub={`Target ${targetRoas}× · ${roasTrend >= 0 ? "↑" : "↓"} ${Math.abs(roasTrend).toFixed(1)}% trend`}
+                accentColor={roasOk ? "#14b8a6" : "#f59e0b"}
+                textColor={roasOk ? "text-teal-400" : "text-amber-400"}
+                sparkValues={daily.map((r: any) => r.roas)} />
+              <KpiCard label="Spend"     loading={loading}
+                value={fmtMoney(summary.spend ?? 0)}
+                sub={range.label}
+                accentColor="#3b82f6" textColor="text-white"
+                sparkValues={daily.map((r: any) => r.spend)} />
+              <KpiCard label="Purchases" loading={loading}
+                value={fmtNum(summary.purchases ?? 0)}
+                sub={(summary.purchases ?? 0) > 0 ? `CPA ${fmtMoney((summary.spend ?? 0) / summary.purchases)}` : "CPA —"}
+                accentColor="#a855f7" textColor="text-purple-400"
+                sparkValues={daily.map((r: any) => r.conversions)} />
             </div>
 
             {/* ATC + CTR cards */}
@@ -658,78 +971,131 @@ export default function BrandDetailPage() {
               </div>
             </div>
 
-            {/* Conversion Funnel */}
-            <div className="p-6 bg-white/5 border border-white/5 rounded-2xl">
-              <h2 className="text-sm font-medium uppercase tracking-widest text-slate-400 mb-6">
-                Conversion Funnel — Today
-              </h2>
-              <p className="text-[10px] text-slate-600 mb-4 uppercase tracking-widest">
-                Impressions → Clicks → ATC → Checkout → Purchase · {range.label}
-              </p>
-              <div className="flex items-start gap-2">
-                <FunnelStep label="Impressions" value={summary.impressions ?? 0} pct={null}         icon={Eye}           color="bg-slate-700" />
-                <div className="flex items-center self-center pb-6 text-slate-700">→</div>
-                <FunnelStep label="Clicks"      value={summary.clicks ?? 0}      pct={ctrPct}       icon={MousePointer}  color="bg-indigo-600" />
-                <div className="flex items-center self-center pb-6 text-slate-700">→</div>
-                <FunnelStep label="Add to Cart" value={summary.atc ?? 0}         pct={atcPct}       icon={ShoppingCart}  color="bg-violet-600" />
-                <div className="flex items-center self-center pb-6 text-slate-700">→</div>
-                <FunnelStep label="Checkout"    value={summary.checkout ?? 0}    pct={checkoutPct}  icon={CreditCard}    color="bg-amber-600" />
-                <div className="flex items-center self-center pb-6 text-slate-700">→</div>
-                <FunnelStep label="Purchases"   value={summary.purchases ?? 0}   pct={purchasePct}  icon={Package}       color="bg-emerald-600" />
-              </div>
-            </div>
-
-            {/* Charts row */}
+            {/* Funnel + Spend vs Revenue — same row */}
             <div className="grid grid-cols-2 gap-5">
               <div className="p-6 bg-white/5 border border-white/5 rounded-2xl">
                 <div className="flex items-center justify-between mb-4">
-                  <h2 className="text-sm font-medium uppercase tracking-widest text-slate-400">Spend vs Revenue</h2>
-                  <span className="text-[10px] text-slate-600">{daily.length}-day</span>
+                  <h2 className="text-sm font-medium uppercase tracking-widest text-slate-400">Conversion Funnel</h2>
+                  <span className="text-[10px] text-slate-600 uppercase tracking-widest">{range.label}</span>
                 </div>
-                <div className="flex gap-4 mb-3">
-                  <SparkBars data={daily} field="spend"   color="bg-indigo-500" />
-                  <SparkBars data={daily} field="revenue" color="bg-emerald-500" />
-                </div>
-                <div className="flex gap-6 text-[10px] font-medium uppercase text-slate-500">
-                  <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-indigo-500 inline-block" />Spend</span>
-                  <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-emerald-500 inline-block" />Revenue</span>
-                </div>
+                <ConversionFunnel steps={[
+                  { label: "Impressions", value: summary.impressions ?? 0 },
+                  { label: "Clicks",      value: summary.clicks ?? 0,     convRate: ctrPct },
+                  { label: "Add to Cart", value: summary.atc ?? 0,        convRate: atcPct },
+                  { label: "Checkout",    value: summary.checkout ?? 0,   convRate: checkoutPct },
+                  { label: "Purchases",   value: summary.purchases ?? 0,  convRate: purchasePct },
+                ]} />
               </div>
+
               <div className="p-6 bg-white/5 border border-white/5 rounded-2xl">
                 <div className="flex items-center justify-between mb-4">
-                  <h2 className="text-sm font-medium uppercase tracking-widest text-slate-400">ROAS Trend</h2>
-                  <span className="text-[10px] text-slate-600">Target: {targetRoas}×</span>
+                  <h2 className="text-sm font-medium uppercase tracking-widest text-slate-400">Spend vs Revenue</h2>
+                  <span className="text-[10px] text-slate-600 font-mono">{daily.length}-day</span>
                 </div>
-                <SparkBars data={daily} field="roas" color={roasOk ? "bg-emerald-500" : "bg-amber-500"} />
-                <div className="flex items-center justify-between mt-3 text-[10px] font-medium text-slate-600 uppercase">
-                  <span>{daily[0]?.date}</span>
-                  <span>{daily[daily.length - 1]?.date}</span>
+                {daily.length === 0
+                  ? <div className="h-36 flex items-center justify-center text-slate-600 text-xs">No data</div>
+                  : <BarChart
+                      data={daily}
+                      keys={["spend", "revenue"]}
+                      keyLabels={["Spend", "Revenue"]}
+                      colors={["rgba(59,130,246,0.75)", "rgba(34,197,94,0.75)"]}
+                      fmtTip={fmtMoney}
+                      fmtAxis={fmtShort}
+                    />
+                }
+                <div className="flex gap-5 mt-2 text-[10px] font-medium uppercase text-slate-500">
+                  <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-sm bg-blue-500/75 inline-block" />Spend</span>
+                  <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-sm bg-emerald-500/75 inline-block" />Revenue</span>
                 </div>
               </div>
             </div>
 
+            {/* ROAS Trend — constrained width, centered */}
+            <div className="p-6 bg-white/5 border border-white/5 rounded-2xl max-w-[65%] mx-auto w-full">
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-sm font-medium uppercase tracking-widest text-slate-400">ROAS Trend</h2>
+                <span className="text-[10px] text-slate-600 font-mono">Target {targetRoas}×</span>
+              </div>
+              {daily.length === 0
+                ? <div className="h-36 flex items-center justify-center text-slate-600 text-xs">No data</div>
+                : <LineChart
+                    data={daily}
+                    dataKey="roas"
+                    color={roasOk ? "#14b8a6" : "#f59e0b"}
+                    fmtAxis={v => v.toFixed(1) + "×"}
+                    fmtTip={v => v.toFixed(2) + "×"}
+                    targetLine={targetRoas}
+                    h={100}
+                  />
+              }
+            </div>
+
             {/* Campaign Performance Table */}
-            {campaigns.length > 0 && (
-              <div>
-                <div className="flex items-center justify-between mb-4">
-                  <div className="flex items-center gap-4">
-                    <h2 className="text-sm font-medium uppercase tracking-widest text-slate-400">Campaign Performance</h2>
+            <div>
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-4">
+                  <h2 className="text-sm font-medium uppercase tracking-widest text-slate-400">Campaign Performance</h2>
+                  {campaigns.length > 0 && (
                     <div className="flex space-x-1 bg-white/5 rounded-lg p-1">
-                      {["ALL", "ACTIVE", "PAUSED"].map(f => (
+                      {[
+                        { key: "LIVE", label: "Live", count: liveCampaigns.length },
+                        { key: "ALL",  label: "All",  count: campaigns.length },
+                      ].map(({ key, label, count }) => (
                         <button
-                          key={f}
-                          onClick={() => setCampFilter(f)}
-                          className={`px-3 py-1 text-[10px] font-medium uppercase tracking-widest rounded transition-colors ${
-                            campFilter === f ? "bg-white text-black drop-shadow-sm" : "text-slate-500 hover:text-white"
+                          key={key}
+                          onClick={() => setCampFilter(key)}
+                          className={`flex items-center gap-1.5 px-3 py-1 text-[10px] font-medium uppercase tracking-widest rounded transition-colors ${
+                            campFilter === key ? "bg-white text-black drop-shadow-sm" : "text-slate-500 hover:text-white"
                           }`}
                         >
-                          {f}
+                          {key === "LIVE" && campFilter === "LIVE" && (
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                          )}
+                          {label}
+                          <span className={`px-1.5 py-0.5 rounded text-[9px] font-semibold ${
+                            campFilter === key ? "bg-black/10 text-black/60" : "bg-white/10 text-slate-400"
+                          }`}>
+                            {count}
+                          </span>
                         </button>
                       ))}
                     </div>
-                  </div>
-                  <span className="text-xs text-slate-600">{filteredCampaigns.length} campaigns · click row for ad sets</span>
+                  )}
+                  {campaigns.length > 0 && (
+                    <button
+                      onClick={() => setCreatedInRange(v => !v)}
+                      className={`flex items-center gap-1.5 px-3 py-1 rounded-lg border text-[10px] font-medium transition-colors ${
+                        createdInRange
+                          ? "bg-indigo-500/20 border-indigo-500/40 text-indigo-300"
+                          : "bg-white/5 border-white/10 text-slate-500 hover:text-slate-300"
+                      }`}
+                    >
+                      <span className={`w-1.5 h-1.5 rounded-full ${createdInRange ? "bg-indigo-400" : "bg-slate-600"}`} />
+                      Created in range
+                    </button>
+                  )}
                 </div>
+                <span className="text-xs text-slate-600">
+                  {campaigns.length > 0
+                    ? `${filteredCampaigns.length} of ${campaigns.length} campaigns · click row for ad sets`
+                    : `${range.from} → ${range.to}`}
+                </span>
+              </div>
+              {campaigns.length === 0 ? (
+                <div className="bg-white/5 border border-white/5 rounded-2xl px-6 py-12 flex flex-col items-center gap-3 text-center">
+                  <p className="text-sm text-slate-400 font-medium">No campaign data for this period</p>
+                  <p className="text-xs text-slate-600 max-w-sm">
+                    Campaign metrics for <span className="font-mono text-slate-500">{range.from} → {range.to}</span> haven&apos;t been synced yet. Try a different date range or refresh from Meta.
+                  </p>
+                  <button
+                    onClick={() => fetch(range)}
+                    className="mt-2 flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-medium rounded-xl transition-colors"
+                  >
+                    <RefreshCw className="w-3.5 h-3.5" />
+                    Retry
+                  </button>
+                </div>
+              ) : (
                 <div className="bg-white/5 border border-white/5 rounded-2xl overflow-hidden overflow-x-auto">
                   <table className="w-full text-sm min-w-[900px]">
                     <thead>
@@ -746,6 +1112,7 @@ export default function BrandDetailPage() {
                         <SortTh col="ctr"           label="CTR" />
                         <SortTh col="cvr"           label="CVR" />
                         <SortTh col="cpa"           label="CPA" />
+                        <th className="text-left px-4 py-3 text-[10px] font-medium uppercase tracking-widest text-slate-500 whitespace-nowrap">Created</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -772,10 +1139,18 @@ export default function BrandDetailPage() {
                                 : "hover:bg-white/5"
                             }`}
                           >
-                            <td className="px-4 py-3 font-medium text-white max-w-[220px] truncate" title={c.campaign_name}>
+                            <td className="px-4 py-3 font-medium text-white max-w-[260px]" title={c.campaign_name}>
                               <div className="flex items-center gap-2">
-                                {c.status === "ACTIVE" && (
+                                {c.status === "ACTIVE" ? (
                                   <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse shadow-[0_0_8px_rgba(16,185,129,0.8)] flex-shrink-0" title="Active" />
+                                ) : (
+                                  <span className={`flex-shrink-0 px-1.5 py-0.5 rounded text-[9px] font-semibold uppercase ${
+                                    c.status === "PAUSED" || c.status === "CAMPAIGN_PAUSED"
+                                      ? "bg-amber-500/15 text-amber-400"
+                                      : "bg-slate-500/15 text-slate-500"
+                                  }`}>
+                                    {c.status === "CAMPAIGN_PAUSED" ? "PAUSED" : (c.status || "UNKNOWN")}
+                                  </span>
                                 )}
                                 <span className="truncate">{c.campaign_name}</span>
                                 <ChevronRight className={`w-3 h-3 flex-shrink-0 transition-transform ${isSelected ? "text-indigo-400 rotate-90" : "text-slate-700"}`} />
@@ -794,14 +1169,17 @@ export default function BrandDetailPage() {
                             <td className="px-4 py-3 text-slate-400">{c.ctr}%</td>
                             <td className="px-4 py-3 text-slate-400">{c.cvr}%</td>
                             <td className="px-4 py-3 text-slate-400">{c.cpa ? fmtMoney(c.cpa) : "—"}</td>
+                            <td className="px-4 py-3 text-slate-500 text-[11px] whitespace-nowrap">
+                              {c.created_at ? new Date(c.created_at).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" }) : "—"}
+                            </td>
                           </tr>
                         );
                       })}
                     </tbody>
                   </table>
                 </div>
-              </div>
-            )}
+              )}
+            </div>
 
             {/* Account Scorecard */}
             {sc.length > 0 && (
