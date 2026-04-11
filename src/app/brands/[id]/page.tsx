@@ -6,7 +6,7 @@ import {
   ArrowLeft, RefreshCw,
   ShoppingCart, MousePointer, Eye, CreditCard, Package,
   ChevronRight, X, Layers, Image as ImageIcon,
-  Film, LayoutGrid, ExternalLink,
+  Film, LayoutGrid, ExternalLink, Link2,
 } from "lucide-react";
 import DateRangePicker, { defaultRange, type DateRange } from "@/components/DateRangePicker";
 
@@ -73,21 +73,44 @@ function AdsetRow({ name, spend, revenue, roas, conversions, clicks, impressions
 }
 
 // ── Creative type icon + badge ────────────────────────────────────────────────
-const CREATIVE_TYPE_LABELS: Record<string, string> = {
-  IMAGE: "Image", VIDEO: "Video", CAROUSEL: "Carousel",
-  LINK: "Link", STATUS: "Status", OFFER: "Offer",
-  EVENT: "Event", NOTE: "Note", PHOTO: "Photo",
+const CREATIVE_TYPE_CONFIG: Record<string, { label: string; icon: any; color: string }> = {
+  IMAGE:    { label: "Image",    icon: ImageIcon,  color: "bg-indigo-500/15 text-indigo-400" },
+  PHOTO:    { label: "Photo",    icon: ImageIcon,  color: "bg-indigo-500/15 text-indigo-400" },
+  VIDEO:    { label: "Video",    icon: Film,       color: "bg-violet-500/15 text-violet-400" },
+  CAROUSEL: { label: "Carousel", icon: LayoutGrid, color: "bg-amber-500/15 text-amber-400" },
+  // SHARE = boosted link-preview post (URL share with OG image + headline)
+  SHARE:    { label: "Share",    icon: Link2,      color: "bg-sky-500/15 text-sky-400" },
+  LINK:     { label: "Link",     icon: Link2,      color: "bg-sky-500/15 text-sky-400" },
+  STATUS:   { label: "Status",   icon: ImageIcon,  color: "bg-slate-500/15 text-slate-400" },
+  OFFER:    { label: "Offer",    icon: ImageIcon,  color: "bg-emerald-500/15 text-emerald-400" },
+  EVENT:    { label: "Event",    icon: ImageIcon,  color: "bg-rose-500/15 text-rose-400" },
 };
 
 function CreativeTypeBadge({ type }: { type: string }) {
-  const label = CREATIVE_TYPE_LABELS[type?.toUpperCase()] ?? (type || "Ad");
-  const isVideo = type?.toUpperCase() === "VIDEO";
-  const isCarousel = type?.toUpperCase() === "CAROUSEL";
-  const Icon = isVideo ? Film : isCarousel ? LayoutGrid : ImageIcon;
-  const color = isVideo ? "bg-violet-500/15 text-violet-400" : isCarousel ? "bg-amber-500/15 text-amber-400" : "bg-indigo-500/15 text-indigo-400";
+  const key = type?.toUpperCase() ?? "";
+  const cfg = CREATIVE_TYPE_CONFIG[key] ?? { label: type || "Ad", icon: ImageIcon, color: "bg-indigo-500/15 text-indigo-400" };
+  const Icon = cfg.icon;
   return (
-    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-medium uppercase tracking-wider ${color}`}>
+    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-medium uppercase tracking-wider ${cfg.color}`}>
       <Icon className="w-2.5 h-2.5" />
+      {cfg.label}
+    </span>
+  );
+}
+
+// ── Ad status badge ───────────────────────────────────────────────────────────
+function AdStatusBadge({ status }: { status: string }) {
+  const s = (status || "UNKNOWN").toUpperCase();
+  const isLive    = s === "ACTIVE";
+  const isPaused  = s === "PAUSED" || s === "CAMPAIGN_PAUSED" || s === "ADSET_PAUSED";
+  const color = isLive
+    ? "bg-emerald-500/15 text-emerald-400 border-emerald-500/20"
+    : isPaused
+    ? "bg-amber-500/15 text-amber-400 border-amber-500/20"
+    : "bg-white/5 text-slate-500 border-white/10";
+  const label = isLive ? "● Live" : isPaused ? "⏸ Paused" : s.toLowerCase().replace(/_/g, " ");
+  return (
+    <span className={`inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-medium border ${color}`}>
       {label}
     </span>
   );
@@ -116,7 +139,10 @@ function AdCard({ ad, targetRoas }: { ad: any; targetRoas: number }) {
         <div className="flex-1 min-w-0 space-y-1.5">
           <div className="flex items-start justify-between gap-2">
             <p className="text-xs font-medium text-slate-400 truncate" title={ad.ad_name}>{ad.ad_name}</p>
-            {ad.creative_type && <CreativeTypeBadge type={ad.creative_type} />}
+            <div className="flex items-center gap-1.5 flex-shrink-0">
+              {ad.ad_status && ad.ad_status !== "UNKNOWN" && <AdStatusBadge status={ad.ad_status} />}
+              {ad.creative_type && <CreativeTypeBadge type={ad.creative_type} />}
+            </div>
           </div>
           {ad.ad_title && (
             <p className="text-sm font-medium text-white leading-snug line-clamp-2" title={ad.ad_title}>
@@ -207,6 +233,8 @@ function DrillPanel({
   const [syncing, setSyncing] = useState(false);
   const [noData, setNoData] = useState(false);
   const [innerDrill, setInnerDrill] = useState<DrillState | null>(null);
+  const [statusFilter, setStatusFilter] = useState("ALL");
+  const [typeFilter, setTypeFilter] = useState("ALL");
 
   const load = useCallback((quiet = false) => {
     if (!quiet) setLoading(true);
@@ -223,7 +251,7 @@ function DrillPanel({
         if (drill.level === "ads" && data.length > 0) {
           const hasCreatives = data.some((d: any) => d.ad_title || d.thumbnail_url);
           if (!hasCreatives) {
-            setTimeout(() => load(true), 6000);
+            setTimeout(() => load(true), 3000);
           }
         }
       })
@@ -254,6 +282,8 @@ function DrillPanel({
     setRows([]);
     setNoData(false);
     setInnerDrill(null);
+    setStatusFilter("ALL");
+    setTypeFilter("ALL");
     load();
   }, [load]);
 
@@ -295,14 +325,24 @@ function DrillPanel({
             <p className="text-[10px] text-slate-500 uppercase tracking-widest">{subtitle}</p>
           </div>
         </div>
-        {drill.level === "adsets" && (
+        <div className="flex items-center gap-1.5 flex-shrink-0">
           <button
-            onClick={onClose}
-            className="p-1.5 rounded-lg hover:bg-white/10 text-slate-500 flex-shrink-0"
+            onClick={triggerSync}
+            disabled={syncing || loading}
+            title="Refresh from Meta"
+            className="p-1.5 rounded-lg hover:bg-white/10 disabled:opacity-40 text-slate-400 transition-colors"
           >
-            <X className="w-4 h-4" />
+            <RefreshCw className={`w-3.5 h-3.5 ${syncing ? "animate-spin text-indigo-400" : ""}`} />
           </button>
-        )}
+          {drill.level === "adsets" && (
+            <button
+              onClick={onClose}
+              className="p-1.5 rounded-lg hover:bg-white/10 text-slate-500"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Content */}
@@ -365,18 +405,97 @@ function DrillPanel({
         ) : (
           // ── Ads: creative cards ──
           <div className="p-4 space-y-3">
-            <div className="flex items-center justify-between mb-1">
-              <p className="text-[10px] text-slate-600 uppercase tracking-widest">{rows.length} ads</p>
-              {rows.length > 0 && !rows.some((r: any) => r.ad_title || r.thumbnail_url) && (
-                <span className="flex items-center gap-1.5 text-[10px] text-amber-400">
-                  <RefreshCw className="w-3 h-3 animate-spin" />
-                  Syncing creatives…
-                </span>
-              )}
+            {/* Filter bar */}
+            <div className="space-y-2">
+              {/* Status filter */}
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <span className="text-[9px] font-medium uppercase tracking-widest text-slate-600 w-10">Status</span>
+                {[
+                  { key: "ALL",    label: "All" },
+                  { key: "ACTIVE", label: "● Live" },
+                  { key: "PAUSED", label: "Paused" },
+                ].map(({ key, label }) => (
+                  <button
+                    key={key}
+                    onClick={() => setStatusFilter(key)}
+                    className={`px-2.5 py-1 rounded-lg text-[10px] font-medium transition-colors ${
+                      statusFilter === key
+                        ? key === "ACTIVE"
+                          ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30"
+                          : "bg-indigo-500/20 text-indigo-400 border border-indigo-500/30"
+                        : "bg-white/5 text-slate-500 border border-white/10 hover:text-slate-300"
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+              {/* Type filter */}
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <span className="text-[9px] font-medium uppercase tracking-widest text-slate-600 w-10">Type</span>
+                {[
+                  { key: "ALL",      label: "All" },
+                  { key: "IMAGE",    label: "Image" },
+                  { key: "VIDEO",    label: "Video" },
+                  { key: "CAROUSEL", label: "Carousel" },
+                  { key: "SHARE",    label: "Share" },
+                ].map(({ key, label }) => (
+                  <button
+                    key={key}
+                    onClick={() => setTypeFilter(key)}
+                    className={`px-2.5 py-1 rounded-lg text-[10px] font-medium transition-colors ${
+                      typeFilter === key
+                        ? "bg-indigo-500/20 text-indigo-400 border border-indigo-500/30"
+                        : "bg-white/5 text-slate-500 border border-white/10 hover:text-slate-300"
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
             </div>
-            {rows.map((r: any) => (
-              <AdCard key={r.ad_id} ad={r} targetRoas={targetRoas} />
-            ))}
+
+            {/* Count + syncing indicator */}
+            {(() => {
+              const filtered = rows.filter((r: any) => {
+                const st = (r.ad_status || "").toUpperCase();
+                const statusOk =
+                  statusFilter === "ALL" ||
+                  (statusFilter === "ACTIVE" && st === "ACTIVE") ||
+                  (statusFilter === "PAUSED" && (st === "PAUSED" || st === "CAMPAIGN_PAUSED" || st === "ADSET_PAUSED"));
+                const ct = (r.creative_type || "").toUpperCase();
+                const typeOk =
+                  typeFilter === "ALL" ||
+                  ct === typeFilter ||
+                  // IMAGE filter also matches PHOTO
+                  (typeFilter === "IMAGE" && ct === "PHOTO") ||
+                  // SHARE filter also matches LINK (same structure)
+                  (typeFilter === "SHARE" && ct === "LINK");
+                return statusOk && typeOk;
+              });
+              const syncing = rows.length > 0 && !rows.some((r: any) => r.ad_title || r.thumbnail_url);
+              return (
+                <>
+                  <div className="flex items-center justify-between">
+                    <p className="text-[10px] text-slate-600 uppercase tracking-widest">
+                      {filtered.length} of {rows.length} ads
+                    </p>
+                    {syncing && (
+                      <span className="flex items-center gap-1.5 text-[10px] text-amber-400">
+                        <RefreshCw className="w-3 h-3 animate-spin" />
+                        Syncing creatives…
+                      </span>
+                    )}
+                  </div>
+                  {filtered.length === 0 && rows.length > 0 && (
+                    <p className="text-[11px] text-slate-600 text-center py-6">No ads match the selected filters</p>
+                  )}
+                  {filtered.map((r: any) => (
+                    <AdCard key={r.ad_id} ad={r} targetRoas={targetRoas} />
+                  ))}
+                </>
+              );
+            })()}
           </div>
         )}
       </div>
