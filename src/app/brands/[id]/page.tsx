@@ -545,18 +545,38 @@ function DrillPanel({
       .then((r) => {
         const data = r.data || [];
         setRows(data);
-        setNoData(data.length === 0);
-        // If ads came back but all lack creative fields, backend is re-syncing — poll again
-        if (drill.level === "ads" && data.length > 0) {
-          const hasCreatives = data.some((d: any) => d.ad_title || d.thumbnail_url);
-          if (!hasCreatives) {
-            setTimeout(() => load(true), 3000);
-          }
+        const isEmpty = data.length === 0;
+        setNoData(isEmpty);
+        
+        // If empty, backend has already triggered a sync. Start polling.
+        if (isEmpty && !syncing) {
+            setSyncing(true);
+            setTimeout(() => load(true), 4000);
+        }
+
+        // If syncing was active and we now have data, stop syncing state
+        if (!isEmpty && syncing) {
+            // Check if it's the "missing creatives" case for ads
+            if (drill.level === "ads") {
+                const hasCreatives = data.some((d: any) => d.ad_title || d.thumbnail_url);
+                if (!hasCreatives) {
+                    setTimeout(() => load(true), 3000);
+                } else {
+                    setSyncing(false);
+                }
+            } else {
+                setSyncing(false);
+            }
         }
       })
-      .catch(() => { setRows([]); setNoData(true); })
+      .catch(() => { 
+        setRows([]); 
+        setNoData(true);
+        // On error, if we were syncing, maybe stop or retry
+        setSyncing(false);
+      })
       .finally(() => setLoading(false));
-  }, [drill, range, brandId]);
+  }, [drill, range, brandId, syncing]);
 
   const triggerSync = () => {
     setSyncing(true);
@@ -566,12 +586,12 @@ function DrillPanel({
         : `${API}/brands/${brandId}/adsets/${drill.adsetId}/ads/sync?date_from=${range.from}&date_to=${range.to}`;
     axios.post(url)
       .then(() => {
-        // Poll every 4s up to 5 times for data to appear
+        // Poll every 4s up to 10 times for data to appear
         let attempts = 0;
         const poll = setInterval(() => {
           attempts++;
           load(true);
-          if (attempts >= 5) { clearInterval(poll); setSyncing(false); }
+          if (attempts >= 10) { clearInterval(poll); setSyncing(false); }
         }, 4000);
       })
       .catch(() => setSyncing(false));
@@ -646,23 +666,32 @@ function DrillPanel({
 
       {/* Content */}
       <div className="flex-1 overflow-auto">
-        {loading ? (
+        {loading && rows.length === 0 ? (
           <div className="py-16 flex flex-col items-center gap-3 text-slate-500">
             <RefreshCw className="w-5 h-5 animate-spin opacity-40" />
             <span className="text-xs">Loading {subtitle.toLowerCase()}…</span>
           </div>
-        ) : noData ? (
+        ) : (noData || (syncing && rows.length === 0)) ? (
           <div className="py-16 flex flex-col items-center gap-4 text-slate-500">
-            <p className="text-xs text-slate-600">No data synced for this period</p>
-            <button
-              onClick={triggerSync}
-              disabled={syncing}
-              className="flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white text-xs font-medium rounded-xl transition-colors"
-            >
-              <RefreshCw className={`w-3.5 h-3.5 ${syncing ? "animate-spin" : ""}`} />
-              {syncing ? "Syncing from Meta…" : "Sync from Meta"}
-            </button>
-            {syncing && <p className="text-[10px] text-slate-600">Pulling from Meta API, checking every 4s…</p>}
+            <div className="w-12 h-12 rounded-2xl bg-indigo-500/10 flex items-center justify-center mb-2">
+                <RefreshCw className={`w-6 h-6 text-indigo-500/40 ${syncing ? "animate-spin" : ""}`} />
+            </div>
+            <p className="text-sm font-medium text-white">{syncing ? "Syncing from Meta…" : "No data found"}</p>
+            <p className="text-xs text-slate-600 max-w-[240px] text-center leading-relaxed">
+                {syncing 
+                    ? "We're pulling the latest performance data from Meta API. This usually takes a few seconds."
+                    : "No data was found for this period in our database."}
+            </p>
+            {!syncing && (
+                <button
+                onClick={triggerSync}
+                className="flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-medium rounded-xl transition-colors mt-2"
+                >
+                <RefreshCw className="w-3.5 h-3.5" />
+                Force Sync from Meta
+                </button>
+            )}
+            {syncing && <p className="text-[10px] text-indigo-400/60 font-medium animate-pulse">Checking for updates every 4s…</p>}
           </div>
         ) : drill.level === "adsets" ? (
           // ── Ad sets: compact table ──
