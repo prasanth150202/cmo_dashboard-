@@ -3,7 +3,7 @@ import React, { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Tag, RefreshCw, Zap, TrendingUp, TrendingDown } from "lucide-react";
 import axios from "axios";
-import DateRangePicker, { defaultRange, type DateRange } from "@/components/DateRangePicker";
+import DateRangePicker, { useDateRange, type DateRange } from "@/components/DateRangePicker";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
 const fmtMoney = (v: number) => "₹" + Math.round(v).toLocaleString("en-IN");
@@ -11,7 +11,7 @@ const fmtMoney = (v: number) => "₹" + Math.round(v).toLocaleString("en-IN");
 export default function DashboardPage() {
   const router = useRouter();
   const [brands, setBrands]   = useState<any[]>([]);
-  const [dateRange, setDateRange] = useState<DateRange>(defaultRange());
+  const [dateRange, setDateRange] = useDateRange();
   const [loading, setLoading]  = useState(true);
   const [syncing, setSyncing]  = useState(false);
 
