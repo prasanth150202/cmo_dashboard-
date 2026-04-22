@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
 import axios from "axios";
 import {
@@ -843,6 +843,9 @@ export default function BrandDetailPage() {
   const [campFilter, setCampFilter] = useState("LIVE");
   const [createdInRange, setCreatedInRange] = useState(false);
   const [drill, setDrill] = useState<DrillState | null>(null);
+  const [syncing, setSyncing] = useState(false);
+  const hasAutoSynced = useRef(false);
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const fetch = (r: DateRange) => {
     setLoading(true);
@@ -854,6 +857,57 @@ export default function BrandDetailPage() {
   };
 
   useEffect(() => { fetch(range); }, [id, range.from, range.to]);
+
+  // Reset auto-sync flag and stop any running poll when the date range changes
+  useEffect(() => {
+    hasAutoSynced.current = false;
+    if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
+    setSyncing(false);
+  }, [range.from, range.to]);
+
+  // Cleanup poll on unmount
+  useEffect(() => {
+    return () => { if (pollRef.current) clearInterval(pollRef.current); };
+  }, []);
+
+  const syncAndPoll = useCallback(() => {
+    if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
+    setSyncing(true);
+    const capturedFrom = range.from;
+    const capturedTo   = range.to;
+    axios.post(`${API}/dashboard/sync-recent`)
+      .then(() => {
+        let attempts = 0;
+        pollRef.current = setInterval(() => {
+          attempts++;
+          axios.get(`${API}/brands/${id}/detail?date_from=${capturedFrom}&date_to=${capturedTo}`)
+            .then(res => {
+              const d = res.data;
+              const hasData = (d?.daily?.length ?? 0) > 0 || (d?.summary?.spend ?? 0) > 0;
+              if (hasData) {
+                setData(d);
+                clearInterval(pollRef.current!); pollRef.current = null;
+                setSyncing(false);
+              } else if (attempts >= 8) {
+                clearInterval(pollRef.current!); pollRef.current = null;
+                setSyncing(false);
+              }
+            })
+            .catch(() => {
+              if (attempts >= 8) { clearInterval(pollRef.current!); pollRef.current = null; setSyncing(false); }
+            });
+        }, 5000);
+      })
+      .catch(() => setSyncing(false));
+  }, [id, range.from, range.to]);
+
+  // Auto-trigger sync once when page loads with no data for the selected range
+  useEffect(() => {
+    if (!loading && data && (data.daily?.length ?? 0) === 0 && !hasAutoSynced.current) {
+      hasAutoSynced.current = true;
+      syncAndPoll();
+    }
+  }, [data, loading, syncAndPoll]);
 
   const brand   = data?.brand;
   const summary = data?.summary ?? {};
@@ -935,7 +989,16 @@ export default function BrandDetailPage() {
             )}
           </div>
           <div className="flex items-center gap-3">
-            <DateRangePicker value={range} onChange={setRange} />
+            <DateRangePicker value={range} onChange={(r) => { hasAutoSynced.current = false; setRange(r); }} />
+            <button
+              onClick={() => { hasAutoSynced.current = false; syncAndPoll(); }}
+              disabled={syncing}
+              title="Pull fresh data from Meta"
+              className="flex items-center gap-1.5 px-3 py-2.5 border border-white/10 rounded-xl hover:bg-white/5 transition-all text-slate-400 disabled:opacity-50 text-xs font-medium"
+            >
+              <RefreshCw className={`w-4 h-4 ${syncing ? "animate-spin text-indigo-400" : ""}`} />
+              {syncing ? "Syncing…" : "Sync"}
+            </button>
             <button onClick={() => fetch(range)} className="p-2.5 border border-white/10 rounded-xl hover:bg-white/5 transition-all text-slate-400">
               <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
             </button>
@@ -1112,17 +1175,34 @@ export default function BrandDetailPage() {
               </div>
               {campaigns.length === 0 ? (
                 <div className="bg-white/5 border border-white/5 rounded-2xl px-6 py-12 flex flex-col items-center gap-3 text-center">
-                  <p className="text-sm text-slate-400 font-medium">No campaign data for this period</p>
-                  <p className="text-xs text-slate-600 max-w-sm">
-                    Campaign metrics for <span className="font-mono text-slate-500">{range.from} → {range.to}</span> haven&apos;t been synced yet. Try a different date range or refresh from Meta.
+                  <p className="text-sm text-slate-400 font-medium">
+                    {syncing ? "Syncing data from Meta…" : "No data for this period"}
                   </p>
-                  <button
-                    onClick={() => fetch(range)}
-                    className="mt-2 flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-medium rounded-xl transition-colors"
-                  >
-                    <RefreshCw className="w-3.5 h-3.5" />
-                    Retry
-                  </button>
+                  <p className="text-xs text-slate-600 max-w-sm">
+                    {syncing
+                      ? "Pulling daily + campaign metrics. This takes 15–30 seconds…"
+                      : <><span className="font-mono text-slate-500">{range.from} → {range.to}</span> hasn&apos;t been synced yet.</>
+                    }
+                  </p>
+                  {syncing ? (
+                    <RefreshCw className="w-5 h-5 animate-spin text-indigo-400 mt-2" />
+                  ) : (
+                    <div className="flex gap-2 mt-2">
+                      <button
+                        onClick={() => { hasAutoSynced.current = false; syncAndPoll(); }}
+                        className="flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-medium rounded-xl transition-colors"
+                      >
+                        <RefreshCw className="w-3.5 h-3.5" />
+                        Sync from Meta
+                      </button>
+                      <button
+                        onClick={() => fetch(range)}
+                        className="flex items-center gap-2 px-4 py-2 bg-white/5 border border-white/10 hover:bg-white/10 text-slate-400 text-xs font-medium rounded-xl transition-colors"
+                      >
+                        Retry
+                      </button>
+                    </div>
+                  )}
                 </div>
               ) : (
                 <div className="bg-white/5 border border-white/5 rounded-2xl overflow-hidden overflow-x-auto">
