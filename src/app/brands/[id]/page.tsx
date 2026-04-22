@@ -535,7 +535,7 @@ function DrillPanel({
   const [statusFilter, setStatusFilter] = useState("ALL");
   const [typeFilter, setTypeFilter] = useState("ALL");
 
-  const load = useCallback((quiet = false) => {
+  const load = useCallback((quiet = false, attempt = 0) => {
     if (!quiet) setLoading(true);
     const url =
       drill.level === "adsets"
@@ -543,40 +543,24 @@ function DrillPanel({
         : `${API}/brands/${brandId}/adsets/${drill.adsetId}/ads?date_from=${range.from}&date_to=${range.to}`;
     axios.get(url)
       .then((r) => {
-        const data = r.data || [];
+        const data = Array.isArray(r.data) ? r.data : (r.data?.data ?? []);
         setRows(data);
         const isEmpty = data.length === 0;
         setNoData(isEmpty);
-        
-        // If empty, backend has already triggered a sync. Start polling.
-        if (isEmpty && !syncing) {
-            setSyncing(true);
-            setTimeout(() => load(true), 4000);
-        }
-
-        // If syncing was active and we now have data, stop syncing state
-        if (!isEmpty && syncing) {
-            // Check if it's the "missing creatives" case for ads
-            if (drill.level === "ads") {
-                const hasCreatives = data.some((d: any) => d.ad_title || d.thumbnail_url);
-                if (!hasCreatives) {
-                    setTimeout(() => load(true), 3000);
-                } else {
-                    setSyncing(false);
-                }
-            } else {
-                setSyncing(false);
-            }
+        if (isEmpty && attempt < 6) {
+          setSyncing(true);
+          setTimeout(() => load(true, attempt + 1), 4000);
+        } else {
+          setSyncing(false);
         }
       })
-      .catch(() => { 
-        setRows([]); 
+      .catch(() => {
+        setRows([]);
         setNoData(true);
-        // On error, if we were syncing, maybe stop or retry
         setSyncing(false);
       })
       .finally(() => setLoading(false));
-  }, [drill, range, brandId, syncing]);
+  }, [drill, range, brandId]);
 
   const triggerSync = () => {
     setSyncing(true);
@@ -586,12 +570,11 @@ function DrillPanel({
         : `${API}/brands/${brandId}/adsets/${drill.adsetId}/ads/sync?date_from=${range.from}&date_to=${range.to}`;
     axios.post(url)
       .then(() => {
-        // Poll every 4s up to 10 times for data to appear
         let attempts = 0;
         const poll = setInterval(() => {
           attempts++;
-          load(true);
-          if (attempts >= 10) { clearInterval(poll); setSyncing(false); }
+          load(true, 0);
+          if (attempts >= 6) { clearInterval(poll); setSyncing(false); }
         }, 4000);
       })
       .catch(() => setSyncing(false));
