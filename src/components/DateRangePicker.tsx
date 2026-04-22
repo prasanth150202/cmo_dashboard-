@@ -1,5 +1,5 @@
 "use client";
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { Calendar, ChevronDown } from "lucide-react";
 
 export type DateRange = {
@@ -46,6 +46,35 @@ export const PRESETS = [
 /** Returns a default "Last 7 Days" range */
 export function defaultRange(): DateRange {
   return { from: daysAgo(6), to: today(), label: "Last 7 Days" };
+}
+
+const LS_KEY = "cmo_date_range";
+
+/**
+ * Global persistent date range hook.
+ * Reads from localStorage on mount so the same range is shared across all pages
+ * and survives refresh. Write once on any page — all pages see it.
+ */
+export function useDateRange(): [DateRange, (r: DateRange) => void] {
+  const [range, setRangeState] = useState<DateRange>(defaultRange);
+
+  // Hydrate from localStorage after mount (avoids SSR mismatch)
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem(LS_KEY);
+      if (stored) {
+        const p = JSON.parse(stored) as DateRange;
+        if (p.from && p.to && p.label) setRangeState(p);
+      }
+    } catch {}
+  }, []);
+
+  const setRange = useCallback((r: DateRange) => {
+    setRangeState(r);
+    try { localStorage.setItem(LS_KEY, JSON.stringify(r)); } catch {}
+  }, []);
+
+  return [range, setRange];
 }
 
 // ── Component ─────────────────────────────────────────────────────────────────

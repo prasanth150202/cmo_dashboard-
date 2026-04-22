@@ -2,7 +2,7 @@
 import { useEffect, useState, useRef } from "react";
 import axios from "axios";
 import { RefreshCw } from "lucide-react";
-import DateRangePicker, { defaultRange, type DateRange } from "@/components/DateRangePicker";
+import DateRangePicker, { useDateRange, type DateRange } from "@/components/DateRangePicker";
 
 const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
 const fmtMoney = (v: number) => "₹" + Math.round(v).toLocaleString("en-IN");
@@ -263,7 +263,7 @@ export default function AnalyticsPage() {
   const [campaigns,  setCampaigns]  = useState<any[]>([]);
   const [allBrands,  setAllBrands]  = useState<any[]>([]);
   const [brandId,    setBrandId]    = useState<string | null>(null);
-  const [range,      setRange]      = useState<DateRange>(defaultRange());
+  const [range,      setRange]      = useDateRange();
   const [loading,    setLoading]    = useState(false);
   const [metric,     setMetric]     = useState<MetricKey>("spend");
   const [sortCol,    setSortCol]    = useState("spend");

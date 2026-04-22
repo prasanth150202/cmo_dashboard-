@@ -7,7 +7,7 @@ import {
   ChevronRight, X, Layers, Image as ImageIcon,
   Film, LayoutGrid, ExternalLink, Link2,
 } from "lucide-react";
-import DateRangePicker, { defaultRange, type DateRange } from "@/components/DateRangePicker";
+import DateRangePicker, { useDateRange, type DateRange } from "@/components/DateRangePicker";
 
 const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
 const fmtMoney = (v: number) => "₹" + Math.round(v).toLocaleString("en-IN");
@@ -808,7 +808,7 @@ export default function BrandDetailPage() {
   const router = useRouter();
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
-  const [range, setRange] = useState<DateRange>(defaultRange());
+  const [range, setRange] = useDateRange();
   const [sortCol, setSortCol] = useState<string>("spend");
   const [sortAsc, setSortAsc] = useState(false);
   const [campFilter, setCampFilter] = useState("LIVE");
