@@ -11,7 +11,7 @@ const NAV = [
   { href: "/brands", icon: Tag, label: "Brand Manager" },
   { href: "/ai-suggestions", icon: Brain, label: "Rule Engine" },
   { href: "/analytics", icon: BarChart2, label: "Analytics" },
-  { href: "/creative", icon: Palette, label: "Creative" },
+  { href: "/creative", icon: Palette, label: "Creative Analysis" },
   { href: "/competitor", icon: Search, label: "Competitor" },
   { href: "/budget", icon: DollarSign, label: "Budget Pace" },
   { href: "/reports", icon: FileText, label: "Reports" },
