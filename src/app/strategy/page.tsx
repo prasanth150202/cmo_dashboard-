@@ -5,18 +5,6 @@ import { Play, Pause, CheckCircle } from "lucide-react";
 const STRATEGIES = {
   a: {
     quad: "QUADRANT A",
-    title: "Impulse Zone",
-    subtitle: "High CTR / High Conv.",
-    diagnosisTitle: "Maximum Efficiency Zone",
-    diagnosis:
-      "Your creative resonance is perfectly aligned with user intent. Every dollar spent is currently at peak velocity.",
-    steps: [
-      "Increase budget horizontally across lookalike segments.",
-      "Test iterative variations of winning 'hooks' only.",
-    ],
-  },
-  b: {
-    quad: "QUADRANT B",
     title: "High Intent",
     subtitle: "Low CTR / High Conv.",
     diagnosisTitle: "Trust Barrier Wall",
@@ -27,20 +15,20 @@ const STRATEGIES = {
       "A/B test authority-based social proof in ad copy.",
     ],
   },
-  c: {
-    quad: "QUADRANT C",
-    title: "Dead Space",
-    subtitle: "Low CTR / Low Conv.",
-    diagnosisTitle: "Strategic Exit Point",
+  b: {
+    quad: "QUADRANT B",
+    title: "Impulse Zone",
+    subtitle: "High CTR / High Conv.",
+    diagnosisTitle: "Maximum Efficiency Zone",
     diagnosis:
-      "Market mismatch. Neither the message nor the offer is sticking. High friction and low desire leads to wasted spend.",
+      "Your creative resonance is perfectly aligned with user intent. Every dollar spent is currently at peak velocity.",
     steps: [
-      "Pause all active sets immediately.",
-      "Re-evaluate product-market fit and landing page UX.",
+      "Increase budget horizontally across lookalike segments.",
+      "Test iterative variations of winning 'hooks' only.",
     ],
   },
-  d: {
-    quad: "QUADRANT D",
+  c: {
+    quad: "QUADRANT C",
     title: "Click Magnet",
     subtitle: "High CTR / Low Conv.",
     diagnosisTitle: "Engagement Trap",
@@ -49,6 +37,18 @@ const STRATEGIES = {
     steps: [
       "Align ad creative closer to the actual offer.",
       "Implement post-click educational funnels to build intent.",
+    ],
+  },
+  d: {
+    quad: "QUADRANT D",
+    title: "Dead Space",
+    subtitle: "Low CTR / Low Conv.",
+    diagnosisTitle: "Strategic Exit Point",
+    diagnosis:
+      "Market mismatch. Neither the message nor the offer is sticking. High friction and low desire leads to wasted spend.",
+    steps: [
+      "Pause all active sets immediately.",
+      "Re-evaluate product-market fit and landing page UX.",
     ],
   },
 } as const;
