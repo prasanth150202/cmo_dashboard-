@@ -3,7 +3,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   LayoutDashboard, Brain, BarChart2, Palette,
-  Search, Settings, FileText, DollarSign, Zap, Tag
+  Search, Settings, FileText, DollarSign, Zap, Tag, Grid2X2
 } from "lucide-react";
 
 const NAV = [
@@ -12,6 +12,7 @@ const NAV = [
   { href: "/ai-suggestions", icon: Brain, label: "Rule Engine" },
   { href: "/analytics", icon: BarChart2, label: "Analytics" },
   { href: "/creative", icon: Palette, label: "Creative Analysis" },
+  { href: "/strategy", icon: Grid2X2, label: "Strategy Matrix" },
   { href: "/competitor", icon: Search, label: "Competitor" },
   { href: "/budget", icon: DollarSign, label: "Budget Pace" },
   { href: "/reports", icon: FileText, label: "Reports" },
@@ -63,7 +64,7 @@ export default function Sidebar() {
           <p className="text-[10px] font-medium text-emerald-600 dark:text-emerald-400 uppercase tracking-widest mb-0.5">Engine Status</p>
           <div className="flex items-center gap-2">
             <div className="w-2 h-2 rounded-full bg-emerald-500 dark:bg-emerald-400 animate-pulse" />
-            <p className="text-xs text-emerald-700 dark:text-emerald-300 font-medium">Active · 9 Modules</p>
+            <p className="text-xs text-emerald-700 dark:text-emerald-300 font-medium">Active · 10 Modules</p>
           </div>
         </div>
       </div>
