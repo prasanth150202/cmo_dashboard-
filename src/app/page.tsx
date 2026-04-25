@@ -1,5 +1,5 @@
 "use client";
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { Tag, RefreshCw, Zap, TrendingUp, TrendingDown } from "lucide-react";
 import axios from "axios";
@@ -10,28 +10,33 @@ const fmtMoney = (v: number) => "₹" + Math.round(v).toLocaleString("en-IN");
 
 export default function DashboardPage() {
   const router = useRouter();
-  const [brands, setBrands]   = useState<any[]>([]);
-  const [dateRange, setDateRange] = useDateRange();
-  const [loading, setLoading]  = useState(true);
-  const [syncing, setSyncing]  = useState(false);
+  const [brands, setBrands]         = useState<any[]>([]);
+  const [dateRange, setDateRange, dateHydrated] = useDateRange();
+  const [loading, setLoading]       = useState(true);
+  const [syncing, setSyncing]       = useState(false);
+  const fetchId                     = useRef(0);
 
   const [viewMode, setViewMode] = useState<"grid" | "table">("table");
 
   const fetchBrands = async (from: string, to: string) => {
+    const id = ++fetchId.current;
     setLoading(true);
     try {
       const r = await axios.get(`${API_BASE}/brands/overview?date_from=${from}&date_to=${to}`);
+      if (id !== fetchId.current) return; // stale
       setBrands(r.data || []);
     } catch {
+      if (id !== fetchId.current) return;
       setBrands([]);
     } finally {
-      setLoading(false);
+      if (id === fetchId.current) setLoading(false);
     }
   };
 
+  // Wait for localStorage hydration before the first fetch
   useEffect(() => {
-    fetchBrands(dateRange.from, dateRange.to);
-  }, [dateRange.from, dateRange.to]);
+    if (dateHydrated) fetchBrands(dateRange.from, dateRange.to);
+  }, [dateRange.from, dateRange.to, dateHydrated]); // eslint-disable-line
 
   const triggerSync = async (type: "recent" | "history") => {
     setSyncing(true);

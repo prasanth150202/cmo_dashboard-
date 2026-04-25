@@ -820,7 +820,7 @@ export default function BrandDetailPage() {
   const router = useRouter();
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
-  const [range, setRange] = useDateRange();
+  const [range, setRange, dateHydrated] = useDateRange();
   const [sortCol, setSortCol] = useState<string>("spend");
   const [sortAsc, setSortAsc] = useState(false);
   const [campFilter, setCampFilter] = useState("LIVE");
@@ -839,7 +839,7 @@ export default function BrandDetailPage() {
       .finally(() => setLoading(false));
   };
 
-  useEffect(() => { fetch(range); }, [id, range.from, range.to]);
+  useEffect(() => { if (dateHydrated) fetch(range); }, [id, range.from, range.to, dateHydrated]); // eslint-disable-line
 
   // Reset auto-sync flag and stop any running poll when the date range changes
   useEffect(() => {

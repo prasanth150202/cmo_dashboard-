@@ -54,9 +54,14 @@ const LS_KEY = "cmo_date_range";
  * Global persistent date range hook.
  * Reads from localStorage on mount so the same range is shared across all pages
  * and survives refresh. Write once on any page — all pages see it.
+ *
+ * Returns [range, setRange, hydrated] where hydrated=true once localStorage has
+ * been read. Use hydrated to gate API calls so they don't fire with the default
+ * range before the stored range has been applied.
  */
-export function useDateRange(): [DateRange, (r: DateRange) => void] {
+export function useDateRange(): [DateRange, (r: DateRange) => void, boolean] {
   const [range, setRangeState] = useState<DateRange>(defaultRange);
+  const [hydrated, setHydrated] = useState(false);
 
   // Hydrate from localStorage after mount (avoids SSR mismatch)
   useEffect(() => {
@@ -67,6 +72,7 @@ export function useDateRange(): [DateRange, (r: DateRange) => void] {
         if (p.from && p.to && p.label) setRangeState(p);
       }
     } catch {}
+    setHydrated(true);
   }, []);
 
   const setRange = useCallback((r: DateRange) => {
@@ -74,7 +80,7 @@ export function useDateRange(): [DateRange, (r: DateRange) => void] {
     try { localStorage.setItem(LS_KEY, JSON.stringify(r)); } catch {}
   }, []);
 
-  return [range, setRange];
+  return [range, setRange, hydrated];
 }
 
 // ── Component ─────────────────────────────────────────────────────────────────

@@ -263,7 +263,7 @@ export default function AnalyticsPage() {
   const [campaigns,  setCampaigns]  = useState<any[]>([]);
   const [allBrands,  setAllBrands]  = useState<any[]>([]);
   const [brandId,    setBrandId]    = useState<string | null>(null);
-  const [range,      setRange]      = useDateRange();
+  const [range,      setRange,      dateHydrated] = useDateRange();
   const [loading,    setLoading]    = useState(false);
   const [metric,     setMetric]     = useState<MetricKey>("spend");
   const [sortCol,    setSortCol]    = useState("spend");
@@ -301,10 +301,10 @@ export default function AnalyticsPage() {
   };
 
   useEffect(() => {
-    if (brandId === null) return;
+    if (brandId === null || !dateHydrated) return;
     const id = ++fetchRef.current;
     loadData(brandId, range, id);
-  }, [brandId, range.from, range.to]);
+  }, [brandId, range.from, range.to, dateHydrated]); // eslint-disable-line
 
   // Aggregates
   const totalSpend   = daily.reduce((s, r) => s + r.spend, 0);

@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import axios from "axios";
 import {
   RefreshCw, Star, Minus, XCircle, ChevronDown,
@@ -278,7 +278,7 @@ function CreativeCard({
 // ── Main page ─────────────────────────────────────────────────────────────────
 
 export default function CreativeAnalysisPage() {
-  const [range, setRange] = useDateRange();
+  const [range, setRange, dateHydrated] = useDateRange();
 
   const [brands, setBrands]           = useState<Brand[]>([]);
   const [selectedBrand, setBrand]     = useState("");
@@ -286,6 +286,7 @@ export default function CreativeAnalysisPage() {
 
   const [data, setData]               = useState<AnalysisData | null>(null);
   const [loading, setLoading]         = useState(false);
+  const [loadingStep, setLoadingStep] = useState("");
   const [reanalyzingAll, setReAll]    = useState(false);
   const [syncing, setSyncing]         = useState(false);
 
@@ -293,6 +294,9 @@ export default function CreativeAnalysisPage() {
   const [sortBy, setSortBy]           = useState<SortKey>("score");
   const [selectedCampaign, setCamp]   = useState("ALL");
   const [campOpen, setCampOpen]       = useState(false);
+
+  // Used to discard responses from superseded requests (stale fetch guard)
+  const fetchId = useRef(0);
 
   // Load brands
   useEffect(() => {
@@ -305,8 +309,29 @@ export default function CreativeAnalysisPage() {
 
   const fetchAnalysis = useCallback(async (forceReanalyze = false, forceSync = false) => {
     if (!selectedBrand) return;
+    const id = ++fetchId.current;
     setLoading(true);
+    setLoadingStep(forceSync ? "Connecting to Meta API…" : "Loading creatives…");
     try {
+      // Staged progress messages so the user sees something moving
+      let stepTimer: ReturnType<typeof setTimeout> | null = null;
+      if (forceSync) {
+        const steps = [
+          [1500,  "Fetching active campaigns & ads…"],
+          [6000,  "Loading creative thumbnails…"],
+          [14000, "Computing performance scores…"],
+          [22000, "Running AI analysis…"],
+          [32000, "Finalizing & caching…"],
+        ] as [number, string][];
+        for (const [delay, msg] of steps) {
+          const t = setTimeout(() => {
+            if (fetchId.current === id) setLoadingStep(msg);
+          }, delay);
+          // Keep only the last timer ref to clear on finish
+          stepTimer = t;
+        }
+      }
+
       const r = await axios.get(`${API}/creative/analysis`, {
         params: {
           brand_id: selectedBrand,
@@ -315,14 +340,25 @@ export default function CreativeAnalysisPage() {
           force_reanalyze: forceReanalyze,
           force_sync: forceSync,
         },
+        timeout: 120_000,
       });
+
+      if (stepTimer) clearTimeout(stepTimer);
+      if (id !== fetchId.current) return; // stale — a newer request is in flight
       setData(r.data);
       if (forceSync) setCamp("ALL");
-    } catch { /* leave stale data visible */ }
-    finally { setLoading(false); }
+    } catch {
+      if (id !== fetchId.current) return;
+      /* leave stale data visible */
+    } finally {
+      if (id === fetchId.current) { setLoading(false); setLoadingStep(""); }
+    }
   }, [selectedBrand, range.from, range.to]);
 
-  useEffect(() => { if (selectedBrand) fetchAnalysis(); }, [selectedBrand, range.from, range.to]); // eslint-disable-line
+  // Only fire once BOTH brand and correct date range are ready
+  useEffect(() => {
+    if (selectedBrand && dateHydrated) fetchAnalysis();
+  }, [selectedBrand, range.from, range.to, dateHydrated]); // eslint-disable-line
 
   const handleReanalyzed = useCallback(() => fetchAnalysis(), [fetchAnalysis]);
 
@@ -610,12 +646,42 @@ export default function CreativeAnalysisPage() {
         </div>
       )}
 
-      {/* ── States ──────────────────────────────────────────────────────────── */}
+      {/* ── Loading / progress ───────────────────────────────────────────────── */}
       {loading && (
-        <div className="py-24 flex flex-col items-center gap-3 text-slate-600">
-          <BarChart2 className="w-8 h-8 animate-pulse" />
-          <p className="text-sm">Scoring creatives…</p>
-          <p className="text-xs text-slate-700">First run calls AI — may take a few seconds</p>
+        <div className="py-16 flex flex-col items-center gap-5">
+          <div className="flex items-center gap-3 text-slate-400">
+            <BarChart2 className="w-6 h-6 animate-pulse text-indigo-400" />
+            <p className="text-sm font-medium">{loadingStep || "Loading creatives…"}</p>
+          </div>
+
+          {/* Animated indeterminate bar */}
+          <div className="w-72 h-1 bg-white/5 rounded-full overflow-hidden">
+            <div className="h-full w-1/2 rounded-full bg-indigo-500" style={{ animation: "slide 1.4s ease-in-out infinite" }} />
+          </div>
+
+          {syncing && (
+            <div className="mt-2 space-y-2 text-center">
+              {[
+                "Connecting to Meta API",
+                "Fetching active campaigns & ads",
+                "Loading creative thumbnails",
+                "Computing performance scores",
+                "Running AI analysis",
+              ].map((step, i) => {
+                const steps = ["Connecting","Fetching","Loading","Computing","Running"];
+                const active = steps.some(s => loadingStep.startsWith(s.slice(0, 4)));
+                const idx    = steps.findIndex(s => loadingStep.startsWith(s.slice(0, 4)));
+                const done   = idx > i;
+                const current = idx === i;
+                return (
+                  <div key={step} className={`flex items-center gap-2 text-xs ${done ? "text-emerald-500" : current ? "text-indigo-300" : "text-slate-700"}`}>
+                    <span className="w-3.5 text-center">{done ? "✓" : current ? "›" : "·"}</span>
+                    {step}
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
       )}
       {!loading && !selectedBrand && (
